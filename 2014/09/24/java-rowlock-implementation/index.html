@@ -1,0 +1,238 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>java rowlock implementation | hy2014&#39;s blog</title>
+  <meta name="author" content="Nazario Wang">
+  
+  <meta name="description" content="java 细粒度锁的实现">
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <meta property="og:title" content="java rowlock implementation"/>
+  <meta property="og:site_name" content="hy2014&#39;s blog"/>
+
+  
+    <meta property="og:image" content="undefined"/>
+  
+
+  
+  
+    <link href="/favicon.png" rel="icon">
+  
+  
+  <link rel="stylesheet" href="/css/bootstrap.min.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/font-awesome.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/highlight.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/google-fonts.css" media="screen" type="text/css">
+  <!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+
+  <script src="/js/jquery-2.0.3.min.js"></script>
+
+  <!-- analytics -->
+  
+
+</head>
+
+ <body>  
+  <nav id="main-nav" class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+      <button type="button" class="navbar-header navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+		<span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+	  <a class="navbar-brand" href="/">hy2014&#39;s blog</a>
+      <div class="collapse navbar-collapse nav-menu">
+		<ul class="nav navbar-nav">
+		  
+		  <li>
+			<a href="/archives" title="All the articles.">
+			  <i class="fa fa-archive"></i>Archives
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/categories" title="All the categories.">
+			  <i class="fa fa-folder"></i>Categories
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/tags" title="All the tags.">
+			  <i class="fa fa-tags"></i>Tags
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/about" title="About me.">
+			  <i class="fa fa-user"></i>About
+			</a>
+		  </li>
+		  
+		</ul>
+      </div>
+    </div> <!-- container -->
+</nav>
+<div class="clearfix"></div>
+
+  <div class="container">
+  	<div class="content">
+    	 
+
+
+	
+		<div class="page-header">		
+			<h1> java rowlock implementation</h1>
+		</div>		
+	
+
+
+
+<div class="row post">
+	<!-- cols -->
+	
+	<div class="col-md-9">
+	
+
+	
+		 <div class="alert alert-success description">
+			<i class="fa fa-info-circle"></i> <p>java 细粒度锁的实现</p>
+			
+		</div> <!-- alert -->
+			
+
+	<!-- content -->
+	<div class="mypage">		
+	    <p>在编写多线程的Code时， 我们尽量将锁的粒度更小。本文尝试用ConcurrentHashMap和CountDownLatch减小锁的粒度。</p>
+<p><a id="more"></a><br>例如Hbase的HRegion在进行Mutation的操作，只尝试去锁Rowkey，下面是一个简单的code， 描述这一行为。</p>
+<p>其实也就是说对于相同Rowkey的修改操作，我们必须加lock。</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div><div class="line">19</div><div class="line">20</div><div class="line">21</div><div class="line">22</div><div class="line">23</div><div class="line">24</div><div class="line">25</div><div class="line">26</div><div class="line">27</div><div class="line">28</div><div class="line">29</div><div class="line">30</div><div class="line">31</div><div class="line">32</div><div class="line">33</div><div class="line">34</div><div class="line">35</div><div class="line">36</div><div class="line">37</div><div class="line">38</div><div class="line">39</div><div class="line">40</div></pre></td><td class="code"><pre><div class="line"><span class="comment">//store all the locks</span></div><div class="line">ConcurrentMap&lt;K, CountDownLatch&gt; rowLocks = <span class="keyword">new</span> ConcurrentHashMap&lt;&gt;();</div><div class="line"><span class="javadoc">/**</span></div><div class="line">* lock current rowkey</div><div class="line">*<span class="javadoctag"> @param</span> key</div><div class="line">*<span class="javadoctag"> @throws</span> Exception </div><div class="line">*/</div><div class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">lock</span>(String key) <span class="keyword">throws</span> Exception {</div><div class="line">     CountDownLatch countDownLatch = <span class="keyword">new</span> CountDownLatch(<span class="number">1</span>);</div><div class="line">     <span class="keyword">while</span> (<span class="keyword">true</span>) {</div><div class="line">        CountDownLatch lock = rowLocks.putIfAbsent(key, countDownLatch);</div><div class="line">        <span class="keyword">if</span> (lock == <span class="keyword">null</span>) {</div><div class="line">            <span class="comment">//we already get the lock, so break;</span></div><div class="line">            <span class="keyword">break</span>;</div><div class="line">        } <span class="keyword">else</span> {</div><div class="line">           <span class="comment">//another request use the lock, we need to await.</span></div><div class="line">            <span class="keyword">try</span> {</div><div class="line">                <span class="keyword">if</span> (!lock.await(MAX_WAIT_TIMEOUT_SECS, TimeUnit.SECONDS)) {</div><div class="line">                    <span class="comment">//wait to timeout, so throw the exception</span></div><div class="line">                    <span class="keyword">throw</span> <span class="keyword">new</span> Exception(<span class="string">"one rowkey wait timeout, rowkey="</span> + key);</div><div class="line">                }</div><div class="line">            } <span class="keyword">catch</span> (InterruptedException e) {</div><div class="line">                logger.warn(<span class="string">"InterruptedException by user."</span>);</div><div class="line">            }</div><div class="line">        }</div><div class="line">    }</div><div class="line">}</div><div class="line"><span class="javadoc">/**</span></div><div class="line">* release the lock</div><div class="line">*<span class="javadoctag"> @param</span> key</div><div class="line">*/</div><div class="line"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">unlock</span>(String key) {</div><div class="line">    CountDownLatch lock = rowLocks.remove(key);</div><div class="line">    <span class="keyword">if</span> (lock == <span class="keyword">null</span>) { </div><div class="line">       logger.error(<span class="string">"unlock a not exist rowkey, is there some bugs ?"</span>); </div><div class="line">    } <span class="keyword">else</span> {</div><div class="line">       <span class="comment">//notify other request to use this rowkey</span></div><div class="line">       lock.countDown();</div><div class="line">    }</div><div class="line">}</div></pre></td></tr></table></figure>
+
+<p>使用ConcurrentMap获取保存锁， 使用CountDownLatch可以相互令竞争者相互等待。 </p>
+	  
+	</div>
+
+	<div>
+  	<center>
+	<div class="pagination">
+<ul class="pagination">
+	 
+				
+    	<li class="prev"><a href="/2014/09/24/git-rebase/" class="alignleft prev"><i class="fa fa-arrow-circle-o-left"></i>上一页</a></li>
+  		
+
+        <li><a href="/archives"><i class="fa fa-archive"></i>Archive</a></li>
+
+		
+		   <li class="next"><a href="/2014/09/24/log-nginx-request-to-rabbitmq/" class="alignright next">下一页<i class="fa fa-arrow-circle-o-right"></i></a></li>         
+        
+	
+</ul>
+</div>
+
+    </center>
+	</div>
+	
+	<!-- comment -->
+	
+<section id="comment">
+  <h2 class="title">留言</h2>
+
+  
+</section>
+
+	
+	</div> <!-- col-md-9/col-md-12 -->
+	
+	
+		<div class="col-md-3"> 
+
+	<!-- date -->
+	
+	<div class="meta-widget">
+	<i class="fa fa-clock-o"></i>
+	9月 24 2014 
+	</div>
+	
+
+	<!-- categories -->
+    
+	<div class="meta-widget">
+	<a data-toggle="collapse" data-target="#categorys"><i class="fa fa-folder"></i></a>	
+    <ul id="categorys" class="tag_box list-unstyled collapse in">
+          
+  <li>
+    <li><a href="/categories/Java/">Java<span>1</span></a></li>
+  </li>
+
+    </ul>
+	</div>
+	
+
+	<!-- tags -->
+	
+	<div class="meta-widget">
+	<a data-toggle="collapse" data-target="#tags"><i class="fa fa-tags"></i></a>		  
+    <ul id="tags" class="tag_box list-unstyled collapse in">	  
+	    
+  <li><a href="/tags/Java/">Java<span>1</span></a></li>
+    </ul>
+	</div>
+		
+
+	<!-- toc -->
+	<div class="meta-widget">
+	
+	   <a data-toggle="collapse" data-target="#toc"><i class="fa fa-bars"></i></a>
+	   <div id="toc" class="toc collapse in">
+			
+		</div>
+	
+	</div>
+	
+    <hr>
+	
+</div><!-- col-md-3 -->
+
+	
+
+</div><!-- row -->
+
+	</div>
+  </div>
+  <div class="container-narrow">
+  <footer> <p>
+  &copy; 2014 Nazario Wang
+  
+      with help from <a href="http://zespia.tw/hexo/" target="_blank">Hexo</a> and <a href="http://getbootstrap.com/" target="_blank">Twitter Bootstrap</a>. Theme by <a href="http://github.com/wzpan/hexo-theme-freemind/">Freemind</a>.    
+</p> </footer>
+</div> <!-- container-narrow -->
+  
+<a id="gotop" href="#">   
+  <span>▲</span> 
+</a>
+
+<script src="/js/jquery.imagesloaded.min.js"></script>
+<script src="/js/gallery.js"></script>
+<script src="/js/bootstrap.min.js"></script>
+<script src="/js/main.js"></script>
+
+
+
+
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css" media="screen" type="text/css">
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+<script type="text/javascript">
+(function($){
+  $('.fancybox').fancybox();
+})(jQuery);
+</script>
+
+
+</body>
+   </html>
