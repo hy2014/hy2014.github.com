@@ -34,4 +34,4 @@ widgets:
 rss: 
 fancybox: true
 favicon: favicon.png
-google_analytics: 
+google_analytics: true
