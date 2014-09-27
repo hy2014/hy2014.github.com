@@ -1,0 +1,290 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>use maven to build application | hy2014&#39;s blog</title>
+  <meta name="author" content="Nazario Wang">
+  
+  <meta name="description" content="使用Maven 构建一个完整的application的目录结构">
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <meta property="og:title" content="use maven to build application"/>
+  <meta property="og:site_name" content="hy2014&#39;s blog"/>
+
+  
+    <meta property="og:image" content="undefined"/>
+  
+
+  
+  
+    <link href="/favicon.png" rel="icon">
+  
+  
+  <link rel="stylesheet" href="/css/bootstrap.min.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/font-awesome.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/highlight.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/google-fonts.css" media="screen" type="text/css">
+  <!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+
+  <script src="/js/jquery-2.0.3.min.js"></script>
+
+  <!-- analytics -->
+  
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-44279385-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+</head>
+
+ <body>  
+  <nav id="main-nav" class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+      <button type="button" class="navbar-header navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+		<span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+	  <a class="navbar-brand" href="/">hy2014&#39;s blog</a>
+      <div class="collapse navbar-collapse nav-menu">
+		<ul class="nav navbar-nav">
+		  
+		  <li>
+			<a href="/archives" title="All the articles.">
+			  <i class="fa fa-archive"></i>Archives
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/categories" title="All the categories.">
+			  <i class="fa fa-folder"></i>Categories
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/tags" title="All the tags.">
+			  <i class="fa fa-tags"></i>Tags
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/about" title="About me.">
+			  <i class="fa fa-user"></i>About
+			</a>
+		  </li>
+		  
+		</ul>
+      </div>
+    </div> <!-- container -->
+</nav>
+<div class="clearfix"></div>
+
+  <div class="container">
+  	<div class="content">
+    	 
+
+
+	
+		<div class="page-header">		
+			<h1> use maven to build application</h1>
+		</div>		
+	
+
+
+
+<div class="row post">
+	<!-- cols -->
+	
+	<div class="col-md-9">
+	
+
+	
+		 <div class="alert alert-success description">
+			<i class="fa fa-info-circle"></i> <p>使用Maven 构建一个完整的application的目录结构</p>
+			
+		</div> <!-- alert -->
+			
+
+	<!-- content -->
+	<div class="mypage">		
+	    <p>今天主要介绍使用maven的插件构建一个完整的java应用结构。 </p>
+<p>为什么强调Java 应用？</p>
+<pre><code>通常大多数开发的都是基于Java Web的应用程序， 大家把应用程序build成一个War包, 扔到Tomcat或者Java EE的服务器上。 
+实际情况是一个Java Web容器不会同时部署多个工程. 所以，现在有很多应用的开发， 最后并不build成一个WAR包， 如果需要Web功能， 内置一个Jetty的容器， 提供Web服务就可以了。
+</code></pre><a id="more"></a>
+
+<p>一个基本的Java Application的结构如下所示:</p>
+<pre><code>-<span class="ruby">-<span class="constant">Projct_Name</span>
+</span> -<span class="ruby"> bin
+</span> -<span class="ruby"> lib
+</span> -<span class="ruby"> conf
+</span> -<span class="ruby"> log
+</span> -<span class="ruby"> webapps(optional)
+</span> -<span class="ruby"> xxxxx-<span class="variable">${</span>version}.jar
+</span> -<span class="ruby"> readme.txt</span>
+</code></pre><blockquote>
+<p>bin目录存放启动该运用的脚本.<br>lib存放该项目依赖的jar包.<br>conf存放启动该项目的配置文件.<br>webapps是可选，如果需要Web容器， 这里存放的是Web.xml的配置。<br>xxxxx-${version}.jar是该项目的代码块.</p>
+</blockquote>
+<p>下面我将介绍构建成这个结构的使用的插件:</p>
+<h4 id="1-_首先我们的配置文件是放在conf这个folder下，_所以在build_jar的时候需要过滤掉配置文件-">1. 首先我们的配置文件是放在conf这个folder下， 所以在build jar的时候需要过滤掉配置文件.</h4>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div></pre></td><td class="code"><pre><div class="line"><span class="tag">&lt;<span class="title">plugin</span>&gt;</span></div><div class="line">  <span class="tag">&lt;<span class="title">groupId</span>&gt;</span>org.apache.maven.plugins<span class="tag">&lt;/<span class="title">groupId</span>&gt;</span></div><div class="line">  <span class="tag">&lt;<span class="title">artifactId</span>&gt;</span>maven-jar-plugin<span class="tag">&lt;/<span class="title">artifactId</span>&gt;</span></div><div class="line">  <span class="tag">&lt;<span class="title">configuration</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">excludes</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">exclude</span>&gt;</span>**/*.properties<span class="tag">&lt;/<span class="title">exclude</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">exclude</span>&gt;</span>**/*.xml<span class="tag">&lt;/<span class="title">exclude</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">exclude</span>&gt;</span>**/*.csv<span class="tag">&lt;/<span class="title">exclude</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">exclude</span>&gt;</span>**/*.txt<span class="tag">&lt;/<span class="title">exclude</span>&gt;</span></div><div class="line">	<span class="tag">&lt;/<span class="title">excludes</span>&gt;</span></div><div class="line">  <span class="tag">&lt;/<span class="title">configuration</span>&gt;</span></div><div class="line"><span class="tag">&lt;/<span class="title">plugin</span>&gt;</span></div></pre></td></tr></table></figure>
+
+<h4 id="2-_然后我们需要使用appassembler-maven-plugin将我们依赖的jar文件放到一个目录下面">2. 然后我们需要使用appassembler-maven-plugin将我们依赖的jar文件放到一个目录下面</h4>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div></pre></td><td class="code"><pre><div class="line"><span class="tag">&lt;<span class="title">plugin</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">groupId</span>&gt;</span>org.codehaus.mojo<span class="tag">&lt;/<span class="title">groupId</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">artifactId</span>&gt;</span>appassembler-maven-plugin<span class="tag">&lt;/<span class="title">artifactId</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">version</span>&gt;</span>1.5<span class="tag">&lt;/<span class="title">version</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">executions</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">execution</span>&gt;</span></div><div class="line">			<span class="tag">&lt;<span class="title">phase</span>&gt;</span>package<span class="tag">&lt;/<span class="title">phase</span>&gt;</span></div><div class="line">			<span class="tag">&lt;<span class="title">goals</span>&gt;</span></div><div class="line">				<span class="tag">&lt;<span class="title">goal</span>&gt;</span>create-repository<span class="tag">&lt;/<span class="title">goal</span>&gt;</span></div><div class="line">			<span class="tag">&lt;/<span class="title">goals</span>&gt;</span></div><div class="line">		<span class="tag">&lt;/<span class="title">execution</span>&gt;</span></div><div class="line">	<span class="tag">&lt;/<span class="title">executions</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">configuration</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">repositoryName</span>&gt;</span>lib<span class="tag">&lt;/<span class="title">repositoryName</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">repositoryLayout</span>&gt;</span>flat<span class="tag">&lt;/<span class="title">repositoryLayout</span>&gt;</span></div><div class="line">	<span class="tag">&lt;/<span class="title">configuration</span>&gt;</span></div><div class="line"><span class="tag">&lt;/<span class="title">plugin</span>&gt;</span></div></pre></td></tr></table></figure>
+
+<h4 id="3-_紧接着就是使用maven-assembly-plugin来build这种结构,_关于这个插件的具体用法-">3. 紧接着就是使用maven-assembly-plugin来build这种结构, 关于这个插件的具体用法.</h4>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div></pre></td><td class="code"><pre><div class="line"><span class="tag">&lt;<span class="title">plugin</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">groupId</span>&gt;</span>org.apache.maven.plugins<span class="tag">&lt;/<span class="title">groupId</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">artifactId</span>&gt;</span>maven-assembly-plugin<span class="tag">&lt;/<span class="title">artifactId</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">version</span>&gt;</span>2.4<span class="tag">&lt;/<span class="title">version</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">executions</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">execution</span>&gt;</span></div><div class="line">			<span class="tag">&lt;<span class="title">phase</span>&gt;</span>package<span class="tag">&lt;/<span class="title">phase</span>&gt;</span></div><div class="line">			<span class="tag">&lt;<span class="title">goals</span>&gt;</span></div><div class="line">				<span class="tag">&lt;<span class="title">goal</span>&gt;</span>single<span class="tag">&lt;/<span class="title">goal</span>&gt;</span></div><div class="line">			<span class="tag">&lt;/<span class="title">goals</span>&gt;</span></div><div class="line">		<span class="tag">&lt;/<span class="title">execution</span>&gt;</span></div><div class="line">	<span class="tag">&lt;/<span class="title">executions</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">configuration</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">descriptors</span>&gt;</span></div><div class="line">			<span class="tag">&lt;<span class="title">descriptor</span>&gt;</span>src/main/assembly/binary-deployment.xml<span class="tag">&lt;/<span class="title">descriptor</span>&gt;</span></div><div class="line">		<span class="tag">&lt;/<span class="title">descriptors</span>&gt;</span></div><div class="line">	<span class="tag">&lt;/<span class="title">configuration</span>&gt;</span></div><div class="line"><span class="tag">&lt;/<span class="title">plugin</span>&gt;</span></div></pre></td></tr></table></figure>
+
+<h4 id="4-_重点在binary-deployment-xml这个文件,_在这里，我们把步骤2中,_所有的依赖jar包copy到lib_folder下,_由于我们自己项目的jar也在里面，_需要exclude掉-">4. 重点在binary-deployment.xml这个文件, 在这里，我们把步骤2中, 所有的依赖jar包copy到lib folder下, 由于我们自己项目的jar也在里面， 需要exclude掉.</h4>
+<figure class="highlight xml"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div></pre></td><td class="code"><pre><div class="line"><span class="tag">&lt;<span class="title">id</span>&gt;</span>${app_version}<span class="tag">&lt;/<span class="title">id</span>&gt;</span></div><div class="line"><span class="tag">&lt;<span class="title">formats</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">format</span>&gt;</span>tar.gz<span class="tag">&lt;/<span class="title">format</span>&gt;</span></div><div class="line"><span class="tag">&lt;/<span class="title">formats</span>&gt;</span></div><div class="line"><span class="tag">&lt;<span class="title">fileSets</span>&gt;</span></div><div class="line">	<span class="tag">&lt;<span class="title">fileSet</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">directory</span>&gt;</span>${project.build.directory}/appassembler/lib<span class="tag">&lt;/<span class="title">directory</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">outputDirectory</span>&gt;</span>lib<span class="tag">&lt;/<span class="title">outputDirectory</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">excludes</span>&gt;</span></div><div class="line">			<span class="tag">&lt;<span class="title">exclude</span>&gt;</span>${project.build.finalName}.jar<span class="tag">&lt;/<span class="title">exclude</span>&gt;</span></div><div class="line">		<span class="tag">&lt;/<span class="title">excludes</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">fileMode</span>&gt;</span>0644<span class="tag">&lt;/<span class="title">fileMode</span>&gt;</span></div><div class="line">		<span class="tag">&lt;<span class="title">directoryMode</span>&gt;</span>0755<span class="tag">&lt;/<span class="title">directoryMode</span>&gt;</span></div><div class="line">	<span class="tag">&lt;/<span class="title">fileSet</span>&gt;</span></div><div class="line"><span class="tag">&lt;/<span class="title">fileSets</span>&gt;</span></div></pre></td></tr></table></figure>
+
+<p>这样一个基本的Java Application的结构build好了。</p>
+	  
+	</div>
+
+	<div>
+  	<center>
+	<div class="pagination">
+<ul class="pagination">
+	 
+				
+    	<li class="prev"><a href="/2014/07/25/git-rebase/" class="alignleft prev"><i class="fa fa-arrow-circle-o-left"></i>上一页</a></li>
+  		
+
+        <li><a href="/archives"><i class="fa fa-archive"></i>Archive</a></li>
+
+		
+		   <li class="next"><a href="/2014/04/21/hindex-explain-implementation/" class="alignright next">下一页<i class="fa fa-arrow-circle-o-right"></i></a></li>         
+        
+	
+</ul>
+</div>
+
+    </center>
+	</div>
+	
+	<!-- comment -->
+	
+<section id="comment">
+  <h2 class="title">留言</h2>
+
+  
+  <!-- 
+
+  <div id="disqus_thread">
+    <noscript>Please enable JavaScript to view the <a href="//disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+  </div>
+  -->
+
+    <div class="ds-thread" data-thread-key="nebm8qi3qh4e9933" data-title="use maven to build application" data-url=""></div>
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"hy2014"};
+  (function() {
+    var ds = document.createElement('script');
+    ds.type = 'text/javascript';ds.async = true;
+    ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+    ds.charset = 'UTF-8';
+    (document.getElementsByTagName('head')[0] 
+     || document.getElementsByTagName('body')[0]).appendChild(ds);
+  })();
+  </script>
+  
+</section>
+
+	
+	</div> <!-- col-md-9/col-md-12 -->
+	
+	
+		<div class="col-md-3"> 
+
+	<!-- date -->
+	
+	<div class="meta-widget">
+	<i class="fa fa-clock-o"></i>
+	6月 18 2014 
+	</div>
+	
+
+	<!-- categories -->
+    
+	<div class="meta-widget">
+	<a data-toggle="collapse" data-target="#categorys"><i class="fa fa-folder"></i></a>	
+    <ul id="categorys" class="tag_box list-unstyled collapse in">
+          
+  <li>
+    <li><a href="/categories/maven/">maven<span>1</span></a></li>
+  </li>
+
+    </ul>
+	</div>
+	
+
+	<!-- tags -->
+	
+	<div class="meta-widget">
+	<a data-toggle="collapse" data-target="#tags"><i class="fa fa-tags"></i></a>		  
+    <ul id="tags" class="tag_box list-unstyled collapse in">	  
+	    
+  <li><a href="/tags/maven/">maven<span>1</span></a></li>
+    </ul>
+	</div>
+		
+
+	<!-- toc -->
+	<div class="meta-widget">
+	
+	</div>
+	
+    <hr>
+	
+</div><!-- col-md-3 -->
+
+	
+
+</div><!-- row -->
+
+	</div>
+  </div>
+  <div class="container-narrow">
+  <footer> <p>
+  &copy; 2014 Nazario Wang
+  
+      with help from <a href="http://zespia.tw/hexo/" target="_blank">Hexo</a> and <a href="http://getbootstrap.com/" target="_blank">Twitter Bootstrap</a>. Theme by <a href="http://github.com/wzpan/hexo-theme-freemind/">Freemind</a>.    
+</p> </footer>
+</div> <!-- container-narrow -->
+  
+<a id="gotop" href="#">   
+  <span>▲</span> 
+</a>
+
+<script src="/js/jquery.imagesloaded.min.js"></script>
+<script src="/js/gallery.js"></script>
+<script src="/js/bootstrap.min.js"></script>
+<script src="/js/main.js"></script>
+
+
+
+
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css" media="screen" type="text/css">
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+<script type="text/javascript">
+(function($){
+  $('.fancybox').fancybox();
+})(jQuery);
+</script>
+
+
+</body>
+   </html>
