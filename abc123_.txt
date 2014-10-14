@@ -1,0 +1,49 @@
+title: title=log nginx request to rabbitmq --advance
+date: 2014-10-14 17:29:32
+tags: nginx
+description: "另外的方式提高发送到rabbitmq的性能"
+toc: true
+category: nginx
+comment: true
+---
+本文基于上篇[博客][1], 提供另外一种方法, 提高nginx发送message发送到rabbitmq的性能.
+
+<!-- more -->
+
+###前言
+上篇博客的代码流程是很简单的
+
+> 1. nginx接受请求
+> 2. 组装数据
+> 3. 建立RabbitMQ的连接, 将组装好的数据发送到RabbitMQ中。
+
+可以看出, 这种方式是很低级的, 每一个请求都消耗一个connection, 就算我们设置了connection pool, 但是测试机,使用ab做测试
+
+	ab -n 10000 -c 300 -p postdata ${url}
+
+当并发超过300的时候, 连接rabbitmq就会频繁失败, 所以我们需要另外一种思路.
+
+##Openresty - Timer & Share Dict
+在openresty的lua module中, 提供了两个特性
+
+> Timer - 提供了类似调度器的功能
+> Share Dict - 一种可以在Worker进程共享的Cache.
+
+关于Timer和Share Dict的更多介绍, 可以访问官方文档.
+
+##基本思路
+> 1. 将接受的请求组装成数据
+> 2. 将数据保存到Share Dict中
+> 3. 后台运行timer, 定期检查， 是否flush到rabbitmq中.
+
+##实现过程
+我们需要将Cache做一个简单的封装, 变成一个Queue的模型, 供Timer去调用，简单介绍一下方法
+
+首先定义一些基础变量, 假定timer将消息Batch发送到RabbitMq的过程称之为flush.
+	
+	read_point - timer在flush阶段读取
+    
+
+
+
+
