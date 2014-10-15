@@ -1,0 +1,31 @@
+<% if (page.comment){ %>
+<section id="comment">
+  <h2 class="title"><%= __('comment') %></h2>
+
+  <% if (theme.comment_provider == "facebook") {
+      if (theme.facebook) { %>
+      <%- partial('_partial/facebook_comment', {fbConfig: theme.facebook}) %>
+      <% } %>
+  <% } else if(config.duoshuo) { %>
+  <!-- 
+
+  <div id="disqus_thread">
+    <noscript>Please enable JavaScript to view the <a href="//disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+  </div>
+  -->
+
+    <div class="ds-thread" data-thread-key="<%= page._id %>" data-title="<%= page.title %>" data-url="<%= item.link %>"></div>
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"hy2014"};
+  (function() {
+    var ds = document.createElement('script');
+    ds.type = 'text/javascript';ds.async = true;
+    ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+    ds.charset = 'UTF-8';
+    (document.getElementsByTagName('head')[0] 
+     || document.getElementsByTagName('body')[0]).appendChild(ds);
+  })();
+  </script>
+  <% } %>
+</section>
+<% } %>

@@ -8,3 +8,8 @@ Thumbs.db
 
 .rbenv-version
 .rvmrc
+scaffolds/*
+public/*
+db.json
+package.json
+.deploy/
