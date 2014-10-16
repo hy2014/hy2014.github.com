@@ -1,0 +1,286 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  <title>hbase data structure and theory | hy2014&#39;s blog</title>
+  <meta name="author" content="Nazario Wang">
+  
+  <meta name="description" content="分享一下本人对Hbase内部结构的认识">
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+
+  <meta property="og:title" content="hbase data structure and theory"/>
+  <meta property="og:site_name" content="hy2014&#39;s blog"/>
+
+  
+    <meta property="og:image" content="undefined"/>
+  
+
+  
+  
+    <link href="/favicon.png" rel="icon">
+  
+  
+  <link rel="stylesheet" href="/css/bootstrap.min.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/font-awesome.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/style.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/highlight.css" media="screen" type="text/css">
+  <link rel="stylesheet" href="/css/google-fonts.css" media="screen" type="text/css">
+  <!--[if lt IE 9]><script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script><![endif]-->
+
+  <script src="/js/jquery-2.0.3.min.js"></script>
+
+  <!-- analytics -->
+  
+<script>
+  (function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+  (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+  m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+  })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+
+  ga('create', 'UA-44279385-1', 'auto');
+  ga('send', 'pageview');
+
+</script>
+
+
+</head>
+
+ <body>  
+  <nav id="main-nav" class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+    <div class="container">
+      <button type="button" class="navbar-header navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+		<span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+	  <a class="navbar-brand" href="/">hy2014&#39;s blog</a>
+      <div class="collapse navbar-collapse nav-menu">
+		<ul class="nav navbar-nav">
+		  
+		  <li>
+			<a href="/archives" title="All the articles.">
+			  <i class="fa fa-archive"></i>Archives
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/categories" title="All the categories.">
+			  <i class="fa fa-folder"></i>Categories
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/tags" title="All the tags.">
+			  <i class="fa fa-tags"></i>Tags
+			</a>
+		  </li>
+		  
+		  <li>
+			<a href="/about" title="About me.">
+			  <i class="fa fa-user"></i>About
+			</a>
+		  </li>
+		  
+		</ul>
+      </div>
+    </div> <!-- container -->
+</nav>
+<div class="clearfix"></div>
+
+  <div class="container">
+  	<div class="content">
+    	 
+
+
+	
+		<div class="page-header">		
+			<h1> hbase data structure and theory</h1>
+		</div>		
+	
+
+
+
+<div class="row post">
+	<!-- cols -->
+	
+	<div class="col-md-9">
+	
+
+	
+		 <div class="alert alert-success description">
+			<i class="fa fa-info-circle"></i> <p>分享一下本人对Hbase内部结构的认识</p>
+			
+		</div> <!-- alert -->
+			
+
+	<!-- content -->
+	<div class="mypage">		
+	    <p>最近, 继续查阅资料, 对Hbase有了一些了解, 所以有了这篇文章.</p>
+<pre><code>本文尝试将Hbase的理论以及跟现实中Hadoop框架结合, 最后阐述Hbase的基本结构为什么是这个样子, 文本篇幅有限, 如果读者对一些概念不清楚, 可以google以获取更详细的解释。
+</code></pre><a id="more"></a>
+
+<h2 id="LSM">LSM</h2>
+<p>说到Hbase, 首先我们需要了解一下LSM模型, 这是支撑Big Table论文的重要组成部分, 下面是它的简单介绍.</p>
+<p>LSM(Log Structure Merge Tree) - 原理是, 对于写操作, 首先将数据Log到内存中, 当内存中的Log超过容量, 将Flush到磁盘上形成一个Tree File, 当Flush的文件数量超过限制, 这时会执行Merge操作, 最后形成一个大的Tree File.</p>
+<p>由于数据都在内存上, 为了防止Server宕机造成数据丢失, 这里就又增加了一个操作, HBase中称为WAL, 就是在写数据到内存之前, 先将这次操作Log到一个文件中, 该文件类型下文再介绍.</p>
+<p>所以LSM在写的时候, 并没有random write disk的操作, write的性能能得到很大的提升.</p>
+<h2 id="Sequence_File_&amp;_MapFile_&amp;_HFile">Sequence File &amp; MapFile &amp; HFile</h2>
+<p>HDFS的文件类型倾向的是大文件的顺序读和顺序写, 这与Hbase想要实现的功能 - 随机读,随机写是冲突的, 那么Hbase又是做了那些事使它能够兼容HDFS?</p>
+<p>先来介绍HDFS支持的两种文件类型: SequnceFile和MapFile.</p>
+<p>SequenceFile - 简单来说是一个支持Key, value对的文件类型, 写支持Append操作, 读是顺序读取, 所以它是一种类似Log File的类型。</p>
+<p>MapFile - MapFile是在SequenceFile的基础上做了一些封装。</p>
+<pre><code><span class="input"><span class="prompt">&gt; MapFile也是Key, Value对, 但是它的数据是按照Key排序的.
+&gt;</span> <span class="constant">MapFile</span>对随机读做了一些优化, 它实际上还保存了一个<span class="constant">Index</span>文件, 存储一些key, <span class="constant">Value</span>的偏移量(一些是指<span class="constant">MapFile</span>并不会把所有<span class="constant">Record</span>都记录到index中去，默认情况下每隔<span class="number">128</span>条记录存储一个索引映射。当然，记录间隔可人为修改).</span>
+</code></pre><p>那么, Hbase的早期设计者, 就是利用SequenceFile和MapFile实现Hbase的WAL, 随机读和随机写功能.</p>
+<p>使用MapFile可以轻松实现了随机读, 但是上述的两种文件类型都不支持随机修改和删除, 因此Hbase对于删除的操作, 就对对这条数据Mark一下删除标志, 然后Log到内存中, 这样某一Cell有多次写的操作, 在读取该Cell的, 会有多条结果, 为判断那一次的更新是最后的操作, 对于每一个Cell, Hbase增加了timestamp. 这也可以解释为什么存储的数据有timestamp.</p>
+<p>对于WAL功能来说, 就比较简单了, SequenceFile天然解决。</p>
+<p>实际上, 早期的Hbase版本存放Tree File就是MapFile类型, 后来Hbase开发人员借鉴MapFile的思想, 自己实现了性能更好的HFile, HFile相对与MapFile而言, 有以下的改变</p>
+<pre><code><span class="input"><span class="prompt">&gt; 将Index和Data两个文件合并成了一个文件.
+&gt;</span> 存放了更多的信息, 例如<span class="constant">Bloom</span> <span class="constant">Filter</span>, <span class="constant">Meta</span> <span class="constant">Data</span>, 等等, 以减少随机读的磁盘<span class="constant">IO</span>的次数.</span>
+</code></pre><p>当然HFile也经历了几次版本变迁, 感兴趣的读者可以另外Google.</p>
+<h2 id="Block_Cache_&amp;_Memstore">Block Cache &amp; Memstore</h2>
+<p>上文已经提到了写的时候先写到内存中, 那么读取的时候, 直接访问该内存来获取数据会明显提高读取的性能, 而该内存模型在Hbase中叫做Memstore.</p>
+<p>当查询的数据不在Memstore中, 而Hbase又不想马上在磁盘上寻找, 所以提出了Block Cache的概念, 简单理解就是将HFile中的Data Block缓存到内存中, 减少Disk I/O.</p>
+<h2 id="总结">总结</h2>
+<p>可以看出, HBase中存在的很多的数据模型, 但是他们当中的大多数目的都相同 - 提高Hbase的随机读写的性能.</p>
+	  
+	</div>
+
+	<div>
+  	<center>
+	<div class="pagination">
+<ul class="pagination">
+	 
+		
+          <li class="prev disabled"><a><i class="fa fa-arrow-circle-o-left"></i>上一页</a></li>
+        
+
+        <li><a href="/archives"><i class="fa fa-archive"></i>Archive</a></li>
+
+		
+		   <li class="next"><a href="/2014/10/14/nginx-log-message-to-rabbitmq-advance/" class="alignright next">下一页<i class="fa fa-arrow-circle-o-right"></i></a></li>         
+        
+	
+</ul>
+</div>
+
+    </center>
+	</div>
+	
+	<!-- comment -->
+	
+<section id="comment">
+  <h2 class="title">留言</h2>
+
+  
+  <!-- 
+
+  <div id="disqus_thread">
+    <noscript>Please enable JavaScript to view the <a href="//disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+  </div>
+  -->
+
+    <div class="ds-thread" data-thread-key="8nl8z3j0tijxivvk" data-title="hbase data structure and theory" data-url=""></div>
+<script type="text/javascript">
+var duoshuoQuery = {short_name:"hy2014"};
+  (function() {
+    var ds = document.createElement('script');
+    ds.type = 'text/javascript';ds.async = true;
+    ds.src = (document.location.protocol == 'https:' ? 'https:' : 'http:') + '//static.duoshuo.com/embed.js';
+    ds.charset = 'UTF-8';
+    (document.getElementsByTagName('head')[0] 
+     || document.getElementsByTagName('body')[0]).appendChild(ds);
+  })();
+  </script>
+  
+</section>
+
+	
+	</div> <!-- col-md-9/col-md-12 -->
+	
+	
+		<div class="col-md-3"> 
+
+	<!-- date -->
+	
+	<div class="meta-widget">
+	<i class="fa fa-clock-o"></i>
+	10月 16 2014 
+	</div>
+	
+
+	<!-- categories -->
+    
+	<div class="meta-widget">
+	<a data-toggle="collapse" data-target="#categorys"><i class="fa fa-folder"></i></a>	
+    <ul id="categorys" class="tag_box list-unstyled collapse in">
+          
+  <li>
+    <li><a href="/categories/hbase/">hbase<span>2</span></a></li>
+  </li>
+
+    </ul>
+	</div>
+	
+
+	<!-- tags -->
+	
+	<div class="meta-widget">
+	<a data-toggle="collapse" data-target="#tags"><i class="fa fa-tags"></i></a>		  
+    <ul id="tags" class="tag_box list-unstyled collapse in">	  
+	    
+  <li><a href="/tags/hbase/">hbase<span>2</span></a></li>
+    </ul>
+	</div>
+		
+
+	<!-- toc -->
+	<div class="meta-widget">
+	
+	</div>
+	
+    <hr>
+	
+</div><!-- col-md-3 -->
+
+	
+
+</div><!-- row -->
+
+	</div>
+  </div>
+  <div class="container-narrow">
+  <footer> <p>
+  &copy; 2014 Nazario Wang
+  
+      with help from <a href="http://zespia.tw/hexo/" target="_blank">Hexo</a> and <a href="http://getbootstrap.com/" target="_blank">Twitter Bootstrap</a>. Theme by <a href="http://github.com/wzpan/hexo-theme-freemind/">Freemind</a>.    
+</p> </footer>
+</div> <!-- container-narrow -->
+  
+<a id="gotop" href="#">   
+  <span>▲</span> 
+</a>
+
+<script src="/js/jquery.imagesloaded.min.js"></script>
+<script src="/js/gallery.js"></script>
+<script src="/js/bootstrap.min.js"></script>
+<script src="/js/main.js"></script>
+
+
+
+
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.css" media="screen" type="text/css">
+<script src="/fancybox/jquery.fancybox.pack.js"></script>
+<script type="text/javascript">
+(function($){
+  $('.fancybox').fancybox();
+})(jQuery);
+</script>
+
+
+</body>
+   </html>
