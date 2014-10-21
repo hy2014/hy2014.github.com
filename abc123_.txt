@@ -1,56 +1,150 @@
 title: log nginx request to rabbitmq --advance
 date: 2014-10-14 17:29:32
-tags: nginx
-description: "另外的方式提高发送到rabbitmq的性能"
+tags: hbase
+description: "Hbase MVCC 介绍"
 toc: true
-category: nginx
+category: hbase
 comment: true
 ---
-本文基于上篇[博客][1], 提供另外一种方法, 提高nginx发送message发送到rabbitmq的性能.
+## Hbase MVCC 介绍
+__________
 
-<!-- more -->
+##读写一致性
+首先假定Hbase如果没有做一致性, 首先思考一个场景, 假如现在数据库中已经有这么一条数据
+| row        | age   | country  |
+| --------   | -----:  | ----:  |
+| 00001     | 15 |   CN     |
+假定当前有一个写请求, 想要把数据修改成
+| 00001      | 16      | US     | 
+| --------   | -----:  | ----:  |
 
-###前言
-上篇博客的代码流程是很简单的
+这个时候有个读请求, 尝试读取该数据, 此时Write请求刚执行一半, 数据库中的数据是这样的
+| 00001      | 16      | CN     | 
+| --------   | -----:  | ----:  |
 
-> 1. nginx接受请求
-> 2. 组装数据
-> 3. 建立RabbitMQ的连接, 将组装好的数据发送到RabbitMQ中。
+这就存在读取数据不一致的问题。
 
-可以看出, 这种方式是很低级的, 每一个请求都消耗一个connection, 就算我们设置了connection pool, 但是测试机,使用ab做测试
+那么我们来看看Hbase是怎么解决一致性问题的。
 
-	ab -n 10000 -c 300 -p postdata ${url}
+写请求流程:
 
-当并发超过300的时候, 连接rabbitmq就会频繁失败, 所以我们需要另外一种思路实现我们的目标.
+    > 每一个写请求都分配一个write_number.
+    > 当写请求完成后, 更新修改数据的最新number.
+    > 更新read point = write_number.(用于读取)
+读请求流程
+    
+    > 读请求时, 给读请求分配一个read_point, 该read_point=Max(write_number)， 该write number为已经完成写请求的write number的集合.
+    > 将最大commit的write number的数据读取出来, 作为读取的结果.
 
-##Openresty - Timer & Share Dict
-在openresty的lua module中, 提供了两个特性
+那么上面的那个例子中, 如果write请求刚执行一半, 此时读请求读取的还是之前的数据:
+| 00001      | 15      | CN     | 
+| --------   | -----:  | ----:  |
 
-> Timer - 提供了类似调度器的功能
-> Share Dict - 一种可以在Worker进程共享的Cache.
+这种算法, 会存在一条数据是有多个版本(write_number), 所以该方法称之为MVCC(Multiversion Concurrency Control).
 
-关于Timer和Share Dict的更多介绍, 可以访问官方文档.
+##写写
+上文中提到, read_point实际上是根据write_number更新的, 那么考虑另外一个场景:
+> read_point = write_number=10, 然后按照时间顺序发生以下事件:
+> 1. write请求A --- 分配write_number 10. 
+> 2. write请求B --- 分配write_number 11.
+> 3. write请求B 完成
+> 4. read 请求C --- 获取read_point
+> 5. write请求A --- 完成.
 
-##基本思路
-> 1. 将接受的请求组装成数据
-> 2. 将数据保存到Share Dict中
-> 3. 后台运行timer, 定期检查， 是否flush到rabbitmq中.
+这种场景下, step 4中, 读请求C读取的read_point, 应该是多少呢？
+    
+    假如B请求完成了, 就执行read_point=write_number, 那么在A请求没有完成的前提下, C请求仍然存在不一致的状况.
 
-##实现过程
-我们需要将Share Dict做一个简单的封装, 变成一个Queue的模型, 供Timer去调用，假定timer将消息Batch发送到RabbitMq称之为flush阶段, 简单介绍一下方法.
-先介绍两个variable
-	
-	write_point - 表示累计接收的request count。
-	read_point - 表示timer累计从cache中读取的request count。
+所以C中获取的read_point应该是10, 那么问题又来了, 如果B完成之后不能修改read_point, 以后怎么修改read_point？
 
-整个流程分为两个阶段
+因此Hbase里面真是的场景顺序如下:
+> read_point = write_number=10, 然后按照时间顺序发生以下事件:
+> 1. write请求A --- 分配write_number 10. 
+> 2. write请求B --- 分配write_number 11.
+> 3. write请求B --- A没有完成, 等待A完成.
+> 4. read 请求C --- 获取read_point=10, 读取结果.
+> 5. write请求A --- 完成, 直接更新read_point=12, 唤醒等待进程, 结束.
+> 6. write请求B --- 被唤醒, 结束.
 
-> 接收请求阶段: 接收一个请求时，将write_point原子性自增1，将当前的write_point作为存放当前request data的key.
-> Timer运行阶段:Timer启动后, 读取write_point和read_point, 如果发现read_point<write_point, 开始flush工作, 将read_point自增, 读取read_point作为key的data, 直到read_point=write_point, 此次flush工作结束.
+##结合代码分析
+Hbase版本0.96.2
+```java
+  private final Object readWaiters = new Object();
+  // This is the pending queue of writes.
+  private final LinkedList<WriteEntry> writeQueue =
+      new LinkedList<WriteEntry>();
+  //在写请求之前, 获取WriteEntry, 该WriteEntry有当前写请求的writeNumber.
+  public WriteEntry beginMemstoreInsert() {
+    synchronized (writeQueue) {
+      long nextWriteNumber = ++memstoreWrite;
+      WriteEntry e = new WriteEntry(nextWriteNumber);
+      writeQueue.add(e);
+      return e;
+    }
+  }
+  
+  boolean advanceMemstore(WriteEntry e) {
+    //取出已经完成写请求, 并且更新memstoreRead, 不一定会更新memstoreRead>=e.getWriteNumber.
+    synchronized (writeQueue) {
+      e.markCompleted();
 
-##注意事项和建议
-> 使用Openresty的Lock, 保证当前只有一个timer在进行flush工作.
-> 对Timer的调度逻辑进行适量优化, 例如可以增加一个变量存放当前cache中request的容量, 当一次flush结束后, 尝试检查该容量值, 一旦容量超出radio, timer可以立即启动, 否则定时启动.
-> 增加一个monitor的url， 管理人员可以通过url获取关键Metric, 获取当前系统的健康状况.
+      long nextReadValue = -1;
+      boolean ranOnce=false;
+      while (!writeQueue.isEmpty()) {
+        ranOnce=true;
+        WriteEntry queueFirst = writeQueue.getFirst();
 
-  [1]: http://hy2014.github.io/2014/09/24/log-nginx-request-to-rabbitmq/
+        if (nextReadValue > 0) {
+          if (nextReadValue+1 != queueFirst.getWriteNumber()) {
+            throw new RuntimeException("invariant in completeMemstoreInsert violated, prev: "
+                + nextReadValue + " next: " + queueFirst.getWriteNumber());
+          }
+        }
+
+        if (queueFirst.isCompleted()) {
+          nextReadValue = queueFirst.getWriteNumber();
+          writeQueue.removeFirst();
+        } else {
+          break;
+        }
+      }
+
+      if (!ranOnce) {
+        throw new RuntimeException("never was a first");
+      }
+
+      if (nextReadValue > 0) {
+        synchronized (readWaiters) {
+          memstoreRead = nextReadValue;
+          //唤醒等待更新memstoreRea的写请求.
+          readWaiters.notifyAll();
+        }
+      }
+      if (memstoreRead >= e.getWriteNumber()) {
+        return true;
+      }
+      return false;
+    }
+  }
+  
+  public void waitForRead(WriteEntry e) {
+    boolean interrupted = false;
+    synchronized (readWaiters) {
+      //等待其他的写请求更新memstoreRead
+      while (memstoreRead < e.getWriteNumber()) {
+        try {
+          readWaiters.wait(0);
+        } catch (InterruptedException ie) {
+          // We were interrupted... finish the loop -- i.e. cleanup --and then
+          // on our way out, reset the interrupt flag.
+          interrupted = true;
+        }
+      }
+    }
+    if (interrupted) Thread.currentThread().interrupt();
+  }
+```
+
+----
+##总结
+本文主要介绍了Hbase对数据一致性的实现方式, 并最后结合MVCC的源码给出了简要的说明.
